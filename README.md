@@ -1,4 +1,4 @@
-# Photo Renamer
+# Photo Renamer [![Build Status](https://app.travis-ci.com/GrumpyMetalGuy/photo_renamer.svg?branch=main)](https://app.travis-ci.com/GrumpyMetalGuy/photo_renamer)
 
 Photo and movie renaming utility. Trying to capture the renaming functionality of Rapid Photo Downloader, but without the downloading and all the other bits:
 
