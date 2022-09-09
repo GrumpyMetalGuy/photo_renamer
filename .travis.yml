@@ -18,4 +18,4 @@ script:
   - cargo test
 branches:
   only:
-    - master
+    - main
