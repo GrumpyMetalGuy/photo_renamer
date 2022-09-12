@@ -1,6 +1,6 @@
 [package]
 name = "photo_renamer"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 categories = ["command-line-utilities", "iamges"]
 
@@ -10,9 +10,11 @@ argh = "0.1"
 chrono = "0.4"
 indicatif = "0.17"
 kamadak-exif = "0.5"
+log = "0.4"
 regex = "1.6"
 rusqlite = { version = "0.28", features = ["bundled"] }
 serde = "1.0"
 serde_derive = "1.0"
+simplelog = "0.12"
 toml = "0.5"
 walkdir = "2.3"

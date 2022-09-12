@@ -6,6 +6,9 @@ use std::fs::File;
 use std::io::Write as IoWrite;
 use std::path::{Path, PathBuf};
 
+use log::info;
+use simplelog::{Config, LevelFilter, SimpleLogger};
+
 use anyhow::{anyhow, Error};
 use argh::FromArgs;
 use chrono::Local;
@@ -306,6 +309,7 @@ fn process_files(
     filenames: &HashMap<String, Vec<PathBuf>>,
     renamer_config: &RenamerConfig,
 ) -> Result<(), Error> {
+    let mut successful_file_copy_count = 0;
     let mut processed_file_count: u64 = 0;
     let pb = ProgressBar::new(filenames.len() as u64);
 
@@ -358,6 +362,9 @@ fn process_files(
                     &renamer_config,
                     &db_connection,
                 )?;
+
+                successful_file_copy_count += 1;
+
                 continue;
             }
 
@@ -370,6 +377,9 @@ fn process_files(
                     &renamer_config,
                     &db_connection,
                 )?;
+
+                successful_file_copy_count += 1;
+
                 continue;
             }
 
@@ -381,6 +391,9 @@ fn process_files(
                     &renamer_config,
                     &db_connection,
                 )?;
+
+                successful_file_copy_count += 1;
+
                 continue;
             }
 
@@ -403,6 +416,12 @@ fn process_files(
         {
             config_file.write(&errors.join("\n").as_bytes())?;
         }
+
+        info!("Errors found when copying {} files", errors.len());
+    }
+
+    if successful_file_copy_count > 0 {
+        info!("Copied {} files", successful_file_copy_count);
     }
 
     Ok(())
@@ -419,21 +438,24 @@ fn run() -> Result<(), Error> {
         Some(conf_object) => conf_object,
     };
 
-    println!("Beginning media rename operation...");
+    info!("Beginning media rename operation...");
 
     let db_connection = get_db(&args).unwrap();
     let filenames = get_all_filenames_in_scope(&config)?;
 
-    println!("Found {} unique file stems", filenames.len());
+    info!("Found {} unique file stems", filenames.len());
 
     process_files(&db_connection, &filenames, &config)?;
 
-    println!("Rename complete");
+    info!("Rename complete");
 
     Ok(())
 }
 
 fn main() -> Result<(), Error> {
+    SimpleLogger::init(LevelFilter::Info, Config::default())?;
+
     run()?;
+
     Ok(())
 }
