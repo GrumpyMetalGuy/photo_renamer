@@ -1,4 +1,4 @@
-# Photo Renamer
+# Photo Renamer [![Build Status](https://app.travis-ci.com/GrumpyMetalGuy/photo_renamer.svg?branch=main)](https://app.travis-ci.com/GrumpyMetalGuy/photo_renamer)
 
 Photo and movie renaming utility. Trying to capture the renaming functionality of Rapid Photo Downloader, but without the downloading and all the other bits:
 
@@ -18,3 +18,7 @@ Then, re-run `renamer`. It will now copy all picture, RAW, and movie files from 
 
 ## Changes Welcome!
 As is usually the case with these little CLIs I put together, there's not a lot in the way of "proper" error handling. There's also not many configuration options for things that have been hard-coded for my use. There may well be panics. And I know it's not very unicode savvy. If you'd like to change any of this, feel free to submit a pull request!
+
+## License
+
+This project is licensed under MIT license (LICENSE-MIT or https://opensource.org/licenses/MIT)
