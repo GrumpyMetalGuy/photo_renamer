@@ -6,16 +6,15 @@ use std::fs::File;
 use std::io::Write as IoWrite;
 use std::path::{Path, PathBuf};
 
-use log::info;
-use simplelog::{Config, LevelFilter, SimpleLogger};
-
 use anyhow::{anyhow, Error};
 use argh::FromArgs;
 use chrono::Local;
 use exif::{In, Reader, Tag};
 use indicatif::{ProgressBar, ProgressState, ProgressStyle};
+use log::{info, warn};
 use regex::Regex;
 use rusqlite::{Connection, Result};
+use simplelog::{Config, LevelFilter, SimpleLogger};
 use walkdir::{DirEntry, WalkDir};
 
 use photo_renamer::config::RenamerConfig;
@@ -97,6 +96,8 @@ fn _is_hidden(entry: &DirEntry) -> bool {
 fn get_all_filenames_in_scope(
     config: &RenamerConfig,
 ) -> Result<HashMap<String, Vec<PathBuf>>, Error> {
+    info!("Determining in-scope filenames");
+
     let mut filenames: HashMap<String, Vec<PathBuf>> = HashMap::new();
 
     for root_path_string in &config.root_paths {
@@ -147,6 +148,8 @@ fn get_all_filenames_in_scope(
             }
         }
     }
+
+    info!("Found {} unique file stems", filenames.len());
 
     Ok(filenames)
 }
@@ -309,6 +312,8 @@ fn process_files(
     filenames: &HashMap<String, Vec<PathBuf>>,
     renamer_config: &RenamerConfig,
 ) -> Result<(), Error> {
+    info!("Beginning media rename operation...");
+
     let mut successful_file_copy_count = 0;
     let mut processed_file_count: u64 = 0;
     let pb = ProgressBar::new(filenames.len() as u64);
@@ -417,7 +422,7 @@ fn process_files(
             config_file.write(&errors.join("\n").as_bytes())?;
         }
 
-        info!("Errors found when copying {} files", errors.len());
+        warn!("Errors found when copying {} files", errors.len());
     }
 
     if successful_file_copy_count > 0 {
@@ -438,12 +443,8 @@ fn run() -> Result<(), Error> {
         Some(conf_object) => conf_object,
     };
 
-    info!("Beginning media rename operation...");
-
     let db_connection = get_db(&args).unwrap();
     let filenames = get_all_filenames_in_scope(&config)?;
-
-    info!("Found {} unique file stems", filenames.len());
 
     process_files(&db_connection, &filenames, &config)?;
 
