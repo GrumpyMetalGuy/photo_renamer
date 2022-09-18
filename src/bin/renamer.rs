@@ -305,6 +305,16 @@ fn extract_datetime_from_file_metadata(file: &PathBuf) -> Option<chrono::NaiveDa
     None
 }
 
+fn has_file_been_processed(db_connection: &Connection, path: &PathBuf) -> bool {
+    let mut check_statement = db_connection
+        .prepare("SELECT * FROM files WHERE filename = ?")
+        .unwrap();
+
+    check_statement
+        .exists(rusqlite::params![&get_sql_safe_filename(path).unwrap()])
+        .unwrap()
+}
+
 /// Process all filenames, copying them if not already copied and if it is possible to determine a valid
 /// date to use for output filename formatting.
 fn process_files(
@@ -330,14 +340,24 @@ fn process_files(
         .progress_chars("#>-"),
     );
 
-    let mut check_statement = db_connection
-        .prepare("SELECT * FROM files WHERE filename = ?")
-        .unwrap();
-
     let mut errors: Vec<String> = vec![];
 
     for (_, paths) in filenames {
-        // Start by trying to determine a unique datetime for the files with the same prefix. We may be mixing
+        // Before we begin, let's update the status bar
+        processed_file_count += 1;
+        pb.set_position(processed_file_count);
+
+        // Firstly, check whether all paths in the paths vec have been processed already. If so, we can
+        // move on now.
+        if paths
+            .iter()
+            .map(|path| has_file_been_processed(db_connection, path))
+            .all(|result| result == true)
+        {
+            continue;
+        }
+
+        // Try to determine a unique datetime for the files with the same prefix. We may be mixing
         // raws with jpgs, and getting raw file info is harder than it seems apparently, so if we can get a single unique
         // datetime from one or more jpgs, we can assume they apply to any raws too.
         let potential_dates = paths
@@ -348,24 +368,21 @@ fn process_files(
             .collect::<HashSet<chrono::NaiveDateTime>>();
 
         for path in paths {
-            if !file_in_scope(&path) {
+            if !file_in_scope(path) {
                 continue;
             }
 
             // We have a file we can investigate. Check whether we've seen it before. If so, we'll skip
-            if check_statement
-                .exists(rusqlite::params![&get_sql_safe_filename(path)?])
-                .unwrap()
-            {
+            if has_file_been_processed(db_connection, path) {
                 continue;
             }
 
             if potential_dates.len() == 1 {
                 copy_file_and_mark_as_processed(
-                    &path,
+                    path,
                     &potential_dates.iter().next().unwrap(),
-                    &renamer_config,
-                    &db_connection,
+                    renamer_config,
+                    db_connection,
                 )?;
 
                 successful_file_copy_count += 1;
@@ -379,8 +396,8 @@ fn process_files(
                 copy_file_and_mark_as_processed(
                     &path,
                     &filename_datetime,
-                    &renamer_config,
-                    &db_connection,
+                    renamer_config,
+                    db_connection,
                 )?;
 
                 successful_file_copy_count += 1;
@@ -393,8 +410,8 @@ fn process_files(
                 copy_file_and_mark_as_processed(
                     &path,
                     &filename_datetime,
-                    &renamer_config,
-                    &db_connection,
+                    renamer_config,
+                    db_connection,
                 )?;
 
                 successful_file_copy_count += 1;
@@ -404,14 +421,12 @@ fn process_files(
 
             // At this stage, you're just out of luck
             let filename_string = String::from(path.to_str().unwrap());
+
             errors.push(format!(
                 "Unable to determine valid datetime for {}",
                 filename_string
             ));
         }
-
-        processed_file_count += 1;
-        pb.set_position(processed_file_count);
     }
 
     // Finally, write out the errors to disk.
@@ -423,6 +438,8 @@ fn process_files(
         }
 
         warn!("Errors found when copying {} files", errors.len());
+
+        return Err(anyhow!("{} errors found when renaming files", errors.len()));
     }
 
     if successful_file_copy_count > 0 {
