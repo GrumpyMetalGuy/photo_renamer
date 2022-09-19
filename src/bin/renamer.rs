@@ -21,7 +21,7 @@ use photo_renamer::config::RenamerConfig;
 
 pub const SUPPORTED_EXIF_EXTENSIONS: [&str; 3] = ["jpg", "tiff", "jpeg"];
 pub const SUPPORTED_RAW_EXTENSIONS: [&str; 3] = ["dng", "rw2", "raw"];
-pub const SUPPORTED_MOVIE_EXTENSIONS: [&str; 3] = ["mp4", "avi", "mpg"];
+pub const SUPPORTED_MOVIE_EXTENSIONS: [&str; 4] = ["mp4", "avi", "mpg", "mov"];
 
 #[derive(FromArgs, PartialEq, Debug)]
 /// Processes a collection of photos and videos, copying them to an output folder with a standardised
