@@ -31,7 +31,7 @@ struct RenamerArgs {
     /// name of the db file used to store configuration information
     db_name: String,
     #[argh(switch, short = 't')]
-    /// name of the db file used to store configuration information
+    /// if set, run in test mode, logging what would have been done in a normal run
     test_mode: bool,
 }
 
