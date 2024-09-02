@@ -30,6 +30,9 @@ struct RenamerArgs {
     #[argh(option, short = 'd', default = "\"renamer.db\".to_string()")]
     /// name of the db file used to store configuration information
     db_name: String,
+    #[argh(switch, short = 't')]
+    /// name of the db file used to store configuration information
+    test_mode: bool,
 }
 
 /// Return a valid database connection to a local SQLlite DB, with the name specified by the
@@ -164,11 +167,11 @@ fn copy_file_and_mark_as_processed(
     source_file: &PathBuf,
     output_date: &chrono::NaiveDateTime,
     renamer_config: &RenamerConfig,
+    renamer_args: &RenamerArgs,
     db_connection: &Connection,
 ) -> Result<(), Error> {
     let mut insert_statement = db_connection
-        .prepare("INSERT INTO files VALUES (?, ?)")
-        .unwrap();
+        .prepare("INSERT INTO files VALUES (?, ?)")?;
 
     let has_mp_tag = source_file
         .file_name()
@@ -231,6 +234,11 @@ fn copy_file_and_mark_as_processed(
 
         let final_path = new_path.to_str().unwrap().to_lowercase();
 
+        if renamer_args.test_mode {
+            info!("Would have copied {} to {}", source_file.to_str().unwrap(), final_path);
+            return Ok(())
+        }
+
         fs::copy(source_file, final_path)?;
 
         let sql_safe_filename = get_sql_safe_filename(source_file)?;
@@ -273,14 +281,14 @@ fn extract_timestamp_from_exif(filename: &PathBuf) -> Result<chrono::NaiveDateTi
 
 /// Extract, where possible, a datetime from a file's name.
 fn extract_datetime_from_filename(file: &PathBuf) -> Option<chrono::NaiveDateTime> {
-    let filename = file.file_stem().unwrap().to_str().unwrap();
+    let filename = file.file_stem()?.to_str()?;
 
     let filename_regex = Regex::new(r"(\d{8})[-_]?(\d{6})").ok()?;
 
     if let Some(captures) = filename_regex.captures(&filename) {
         if captures.len() == 1 {
-            let first_capture = captures.get(1).unwrap();
-            let second_capture = captures.get(2).unwrap();
+            let first_capture = captures.get(1)?;
+            let second_capture = captures.get(2)?;
 
             if let Ok(file_date) = chrono::NaiveDateTime::parse_from_str(
                 format!("{}{}", first_capture.as_str(), second_capture.as_str()).as_str(),
@@ -321,6 +329,7 @@ fn process_files(
     db_connection: &Connection,
     filenames: &HashMap<String, Vec<PathBuf>>,
     renamer_config: &RenamerConfig,
+    renamer_args: &RenamerArgs,
 ) -> Result<(), Error> {
     info!("Beginning media rename operation...");
 
@@ -332,8 +341,7 @@ fn process_files(
     pb.set_style(
         ProgressStyle::with_template(
             "{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {pos}/{len} ({eta})",
-        )
-        .unwrap()
+        )?
         .with_key("eta", |state: &ProgressState, w: &mut dyn FmtWrite| {
             write!(w, "{:.1}s", state.eta().as_secs_f64()).unwrap()
         })
@@ -382,6 +390,7 @@ fn process_files(
                     path,
                     &potential_dates.iter().next().unwrap(),
                     renamer_config,
+                    renamer_args,
                     db_connection,
                 )?;
 
@@ -397,6 +406,7 @@ fn process_files(
                     &path,
                     &filename_datetime,
                     renamer_config,
+                    renamer_args,
                     db_connection,
                 )?;
 
@@ -411,6 +421,7 @@ fn process_files(
                     &path,
                     &filename_datetime,
                     renamer_config,
+                    renamer_args,
                     db_connection,
                 )?;
 
@@ -460,10 +471,10 @@ fn run() -> Result<(), Error> {
         Some(conf_object) => conf_object,
     };
 
-    let db_connection = get_db(&args).unwrap();
+    let db_connection = get_db(&args)?;
     let filenames = get_all_filenames_in_scope(&config)?;
 
-    process_files(&db_connection, &filenames, &config)?;
+    process_files(&db_connection, &filenames, &config, &args)?;
 
     info!("Rename complete");
 
