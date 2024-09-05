@@ -1,11 +1,3 @@
-use std::collections::{HashMap, HashSet};
-use std::fmt::Debug;
-use std::fmt::Write as FmtWrite;
-use std::fs;
-use std::fs::File;
-use std::io::Write as IoWrite;
-use std::path::{Path, PathBuf};
-
 use anyhow::{anyhow, Error};
 use argh::FromArgs;
 use chrono::Local;
@@ -15,6 +7,15 @@ use log::{info, warn};
 use regex::Regex;
 use rusqlite::{Connection, Result};
 use simplelog::{Config, LevelFilter, SimpleLogger};
+use std::collections::{HashMap, HashSet};
+use std::fmt::Debug;
+use std::fmt::Write as FmtWrite;
+use std::fs;
+use std::fs::File;
+use std::io::Write as IoWrite;
+use std::ops::Add;
+use std::path::{Path, PathBuf, MAIN_SEPARATOR_STR};
+use std::process::exit;
 use walkdir::{DirEntry, WalkDir};
 
 use photo_renamer::config::RenamerConfig;
@@ -28,11 +29,39 @@ pub const SUPPORTED_MOVIE_EXTENSIONS: [&str; 4] = ["mp4", "avi", "mpg", "mov"];
 /// naming format.
 struct RenamerArgs {
     #[argh(option, short = 'd', default = "\"renamer.db\".to_string()")]
-    /// name of the db file used to store configuration information
+    /// name of the db file used to store file copy history
     db_name: String,
     #[argh(switch, short = 't')]
-    /// if set, run in test mode, logging what would have been done in a normal run
+    /// run in test mode, logging what would have been done in a normal run instead of performing the action
     test_mode: bool,
+
+    #[argh(subcommand)]
+    sub_command: SubCommandEnum,
+}
+
+#[derive(FromArgs, PartialEq, Debug)]
+#[argh(subcommand)]
+enum SubCommandEnum {
+    Rename(RenameSubCommand),
+    Rebase(RebaseSubCommand),
+}
+
+#[derive(FromArgs, PartialEq, Debug)]
+/// rename and copy files as per the config file
+#[argh(subcommand, name = "rename")]
+struct RenameSubCommand {}
+
+#[derive(FromArgs, PartialEq, Debug)]
+/// update the source file locations in the db to allow for file-system changes
+#[argh(subcommand, name = "rebase")]
+struct RebaseSubCommand {
+    #[argh(positional)]
+    /// the original root directory of files in the file copy history to be changed
+    original_file_root: String,
+
+    #[argh(positional)]
+    /// the new root directory to use in the file copy history
+    destination_file_root: String,
 }
 
 /// Return a valid database connection to a local SQLlite DB, with the name specified by the
@@ -170,8 +199,7 @@ fn copy_file_and_mark_as_processed(
     renamer_args: &RenamerArgs,
     db_connection: &Connection,
 ) -> Result<(), Error> {
-    let mut insert_statement = db_connection
-        .prepare("INSERT INTO files VALUES (?, ?)")?;
+    let mut insert_statement = db_connection.prepare("INSERT INTO files VALUES (?, ?)")?;
 
     let has_mp_tag = source_file
         .file_name()
@@ -235,8 +263,12 @@ fn copy_file_and_mark_as_processed(
         let final_path = new_path.to_str().unwrap().to_lowercase();
 
         if renamer_args.test_mode {
-            info!("Would have copied {} to {}", source_file.to_str().unwrap(), final_path);
-            return Ok(())
+            info!(
+                "Would have copied {} to {}",
+                source_file.to_str().unwrap(),
+                final_path
+            );
+            return Ok(());
         }
 
         fs::copy(source_file, final_path)?;
@@ -460,9 +492,53 @@ fn process_files(
     Ok(())
 }
 
-fn run() -> Result<(), Error> {
-    let args: RenamerArgs = argh::from_env();
+fn process_rebase(args: &RenamerArgs, rebase_args: &RebaseSubCommand) -> Result<(), Error> {
+    let mut source_root = get_sql_safe_filename(&PathBuf::from(&rebase_args.original_file_root))?;
+    let mut dest_root = get_sql_safe_filename(&PathBuf::from(&rebase_args.destination_file_root))?;
 
+    if !source_root.ends_with(MAIN_SEPARATOR_STR) {
+        source_root = source_root.add(MAIN_SEPARATOR_STR);
+    }
+
+    if !dest_root.ends_with(MAIN_SEPARATOR_STR) {
+        dest_root = dest_root.add(MAIN_SEPARATOR_STR);
+    }
+
+    let db_connection = get_db(&args)?;
+
+    if args.test_mode {
+        let mut select_statement =
+            db_connection.prepare("SELECT COUNT(*) FROM files WHERE filename like ?")?;
+
+        let updated_rows =
+            select_statement.query_row(rusqlite::params![format!("{}%", &source_root)], |row| row.get::<_, i32>(0))?;
+
+        info!(
+            "Would have updated {} path roots from {} to {}",
+            updated_rows, &source_root, &dest_root
+        );
+    } else {
+        let mut update_statement = db_connection
+            .prepare("UPDATE files SET filename = replace(filename, ?, ?) WHERE filename like ?")?;
+
+        let updated_rows = update_statement.execute(rusqlite::params![
+            &source_root,
+            &dest_root,
+            format!("{}%", &source_root)
+        ])?;
+
+        info!(
+            "Updated path roots from {} to {} - {} rows affected",
+            &source_root, &dest_root, updated_rows
+        );
+    }
+
+    info!("Rebase complete");
+
+    Ok(())
+}
+
+fn process_rename(args: &RenamerArgs, _: &RenameSubCommand) -> Result<(), Error> {
     // Try and read config file into object. If none was found, this will be None, so we can finish up
     let config = match RenamerConfig::read_or_create()? {
         None => {
@@ -481,10 +557,21 @@ fn run() -> Result<(), Error> {
     Ok(())
 }
 
+fn run() -> Result<(), Error> {
+    let args: RenamerArgs = argh::from_env();
+
+    match args.sub_command {
+        SubCommandEnum::Rename(ref rename_args) => process_rename(&args, &rename_args),
+        SubCommandEnum::Rebase(ref rebase_args) => process_rebase(&args, &rebase_args),
+    }?;
+
+    Ok(())
+}
+
 fn main() -> Result<(), Error> {
     SimpleLogger::init(LevelFilter::Info, Config::default())?;
 
     run()?;
 
-    Ok(())
+    exit(0)
 }
